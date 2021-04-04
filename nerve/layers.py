@@ -188,7 +188,7 @@ class Dense(Base):
         # NOTE: Here _delta is the sum from all samples, it should be mean, because if all samples 
         # said we want to move +1, it will move +n which is wrong. I wonder how NN are then trained in
         # parallel, because async addition is probably done. and the current method also trains by the way.
-        # maybe the sensitivty to learning rate was so high due to this addition. check that out.
+        # maybe the sensitivty to learning rate was so high due to this addition. check that out. (Fix in RNN layer also)
         if self.bias:
             next_error = self.params.weights.T[:-1] @ error  # NOTE: Drops the biases from weights
         else:
@@ -358,6 +358,57 @@ class Dropout(Base):
 
     def backpropogate(self, error):
         return error * self.mask
+
+
+class RNN(Base):
+    def __init__(self, network, name='None'):
+        '''
+        Note 'network' argument here is for the internal network of the RNN layer.
+        '''
+        # TODO: Add options for init method and bias like in dense layer. Add option for hidden_activation
+        super().__init__(name)
+        self.network = network
+        self.shape = self.network[-1].shape
+        self.init_state = np.zeros(self.shape)
+        self.hidden_activation = activations.Tanh  # Hardcode for now
+
+    def __repr__(self):
+        return f"Recurrent: {self.name}({self.shape})"
+    
+    def __init_params(self, network):
+        # TODO: Decide on using params class here.
+        self._get_input_shape(network)
+        self.recurrent_weights = np.random.rand(self.shape, self.shape)
+        self._recurrent_delta = np.zeros(self.recurrent_weights.shape)
+    
+    def __update_delta(self, _delta):
+        self._recurrent_delta += _delta
+
+    def delta(self):
+        return self._recurrent_delta
+
+    def evaluate(self, inp):
+        # NOTE: Refer here https://www.tensorflow.org/api_docs/python/tf/keras/layers/RNN#examples_2
+        # TODO: Option to return entire sequence as numpy array
+        self.output_sequence =  {}  # Output for RNN layer is equal to its state.
+        self._input_sequence_length = len(inp)  # can be different for each sample. This is cached by the layer
+        self.output_sequence[-1] = np.copy(self.state)
+        # For single sample right now: (This will prbably work for batch aswell, test once.)
+        for t in range(self._input_sequence_length): #This is 10xself.input_shape(8) -> a sequence of 10 items of size 8
+            self.output_sequence[t] = self.network(inp[t]) + self.output_sequence[t-1] @ self.recurrent_weights
+        return self.output_sequence[t]
+
+    def backpropogate(self, error):
+        for t in reversed(range(self._input_sequence_length)):
+            self.network.backprop(error)
+            self._recurrent_delta += error @ self.output_sequence[t-1].T
+            error = self.reccurrent_weights.T @ error  # Same as dense layer
+            
+    def update_params(self, optimizer):
+        self.network.optimizer = optimizer
+        self.network.update_params()
+        self.recurrent_weights += optimizer.step(self.delta())
+
 
 class Flatten(Base):
     def __init__(self):
