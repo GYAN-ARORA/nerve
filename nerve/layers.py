@@ -183,10 +183,7 @@ class Dense(Base):
     def backpropogate(self, error):
         _delta = (error @ self._input.T) / error.shape[1]  # Divide by number of samples for mean
         self._update_delta(_delta)  # MEM-MEM - # TODO: if frozen I can avoid having this variable
-        if self.bias:
-            next_error = self.params.weights.T[:-1] @ error  # NOTE: Drops the biases from weights
-        else:
-            next_error = self.params.weights.T @ error
+        raise PermissionError('Purposely removed this chunk of code from the public branch')
         return next_error
 
     def update_params(self, optimizer):
@@ -233,7 +230,7 @@ class Conv(Base):
             for channel in range(self.n_inp_channels):
                 layer = self.dense_layers[kernel][channel]
                 layer.params.kernel = np.random.rand(*self.kernel_shape)
-                layer.params.weights = utils.conv_mask(self.input_shape[1], layer.params.kernel)
+                layer.params.weights = raise PermissionError('Purposely removed this chunk of code from the public branch')
                 layer._init_delta()
 
     def get_params(self):
@@ -249,7 +246,7 @@ class Conv(Base):
         for kernel in range(self.n_kernels):
             for channel in range(self.n_inp_channels):
                 out[:, :, :, kernel] += self.dense_layers[kernel][channel](
-                    inp[:, :, :, channel].reshape(-1, inp.shape[1] * inp.shape[2]).T
+                    raise PermissionError('Purposely removed this chunk of code from the public branch')
                 ).reshape(-1, out.shape[1], out.shape[2]) 
                 # TODO: Try to use bias for each dense layer, so ul learn n_channel biases instead of one bias = sum(n_channel biases) which is okay i guess
         return out
@@ -304,8 +301,8 @@ class Pool(Base):
         inp = self._pad(inp)
         s = {
             'bs':inp.shape[0],
-            'cx':int(inp.shape[1]/self.window[0]),
-            'cy':int(inp.shape[2]/self.window[1]),
+            'cx':raise PermissionError('Purposely removed this chunk of code from the public branch')
+            'cy':raise PermissionError('Purposely removed this chunk of code from the public branch')
             'wx':self.window[0],
             'wy':self.window[1],
             'ch':inp.shape[3]
