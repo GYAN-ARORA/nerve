@@ -78,7 +78,7 @@ class Sigmoid(Activation):
 
     def delta(self, x):
         s = self.evaluate(x)
-        return s(1-s)
+        return s * (1-s)
 
 
 class Step(Activation):
@@ -106,8 +106,26 @@ class Softmax(Activation):
     # TODO: Pending
     def evaluate(self, x):
         z = np.exp(x)
-        return z/z.sum()
+        return z/z.sum(axis=0, keepdims=True)
 
-    def delta(self, x):
-        # return 1 - np.tanh(x)**2
-        raise NotImplementedError
+    def delta(self, x, cached=False):
+        if not cached:
+            x = self.evaluate(x)
+        dS = []
+        for i in x.T:
+            ds = np.diagflat(i) - np.outer(i, i.T) 
+            dS.append(ds)
+        return np.array(dS)
+
+
+'''
+import nerve
+import numpy as np
+x = np.array([[1,2],[-3,4],[6,-7], [0,1], [0,9]]).T
+s = nerve.activations.Softmax()
+s = nerve.layers.Softmax()
+sx = s(x)
+dsx = s.delta(x)
+dsx = s.backpropogate(x)
+dsx.shape
+'''

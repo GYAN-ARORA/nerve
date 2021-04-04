@@ -295,7 +295,7 @@ class Pool(Base):
         # NOTE: This is ceil division. I will be padding appropriately so as to loose no information for indivisible pool size
         self.padding = (self.window[0] - self.input_shape[1] % self.window[0], self.window[0] - self.input_shape[2] % self.window[1])
 
-    def _pad(self, inp)  # TODO: Test and check this padding operation, make padding a util if also used elsewhere
+    def _pad(self, inp):  # TODO: Test and check this padding operation, make padding a util if also used elsewhere
         pad_mode = 'minimum' if self.operation == 'max' else 'mean'
         pad_width = ((0,0), (0, self.padding[0]), (0, self.padding[1]), (0,0))
         stat_len = ((1, 1), (1, self.window[0] - self.padding[0]), (1, self.window[1] - self.padding[1]), (1, 1))  # (1,1) does nothing, just to avoid error
@@ -454,9 +454,28 @@ class Relu(Base):
         return error * self._activation.delta(self._inp)
 
 
+class Sigmoid(Relu):
+    def __init__(self, name=None):
+        # TODO: Create an activations base class
+        super().__init__(name)
+        self._activation = activations.Sigmoid()
+
+
 class Softmax(Base):
-    def __init__(self):
-        raise NotImplementedError
+    def __init__(self, name=None):
+        super().__init__(name)
+        self._activation = activations.Softmax()
+    
+    def evaluate(self, inp):
+        self._out = self._activation(inp)
+        return self._out
+
+    def backpropogate(self, error):
+        DS = []
+        dS = self._activation.delta(self._out, cached=True)
+        for e, ds in zip(error.T, dS):
+            DS.append(ds @ e)
+        return np.array(DS).T
 
 
 class Add(Base):
