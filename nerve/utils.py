@@ -1,3 +1,5 @@
+import numpy as np
+
 def empty_copy(obj):
     '''
     Create a blank copy of an object without calling the __init__ method.
@@ -26,3 +28,15 @@ def conv_mask(image_size, kernel):
             cnt += 1
     return w
 
+
+def scale(X):
+    min, max = X.min(), X.max()
+    X = X - min
+    X = X / (max - min)
+    return X
+
+
+def one_hot(a):
+    # TODO: Make this function better and keep class mapping
+    num_classes = len(np.unique(a))
+    return np.squeeze(np.eye(num_classes)[a.reshape(-1)])
