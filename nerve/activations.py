@@ -73,12 +73,17 @@ class Elu(Activation):
 
 
 class Sigmoid(Activation):
+    def __init__(self, scale='auto'):
+        self.scale = scale
+
     def evaluate(self, x):
-        return 1/(1 + np.exp(-x))
+        if self.scale == 'auto':
+            self.scale = 1 / abs(x).mean()
+        return 1/(1 + np.exp(-x * self.scale))
 
     def delta(self, x):
         s = self.evaluate(x)
-        return s * (1-s)
+        return self.scale * s * (1-s)
 
 
 class Step(Activation):
@@ -103,10 +108,9 @@ class Tanh(Activation):
 
 
 class Softmax(Activation):
-    # TODO: Pending
     def evaluate(self, x):
-        z = np.exp(x)
-        return z/z.sum(axis=0, keepdims=True)
+        z = np.exp(x) #  - x.max(axis=0))
+        return z/z.sum(axis=0, keepdims=True) + 1e-8
 
     def delta(self, x, cached=False):
         if not cached:
@@ -116,16 +120,3 @@ class Softmax(Activation):
             ds = np.diagflat(i) - np.outer(i, i.T) 
             dS.append(ds)
         return np.array(dS)
-
-
-'''
-import nerve
-import numpy as np
-x = np.array([[1,2],[-3,4],[6,-7], [0,1], [0,9]]).T
-s = nerve.activations.Softmax()
-s = nerve.layers.Softmax()
-sx = s(x)
-dsx = s.delta(x)
-dsx = s.backpropogate(x)
-dsx.shape
-'''

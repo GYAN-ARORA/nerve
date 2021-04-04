@@ -139,19 +139,19 @@ class Dense(Base):
     def __repr__(self):
         return f"{self.name}({self.shape})"
 
-    def __init_delta(self):
+    def _init_delta(self):
         # TODO: THis batch count will not be necessary if weights updated
         # per batch, unless the user wants to right own callback for control.
         # if that is never going to be the case then remove this.
-        self.__batch_count = 0
-        self.__delta = np.zeros(self.params.weights.shape)
+        self._batch_count = 0
+        self._delta = np.zeros(self.params.weights.shape)
 
-    def __update_delta(self, _delta):
-        self.__batch_count += 1
-        self.__delta += _delta
+    def _update_delta(self, _delta):
+        self._batch_count += 1
+        self._delta += _delta
 
     def delta(self):
-        return self.__delta / self.__batch_count
+        return self._delta / self._batch_count
 
     def _init_method(self, initialization):
         # TODO: Add decorators for passing other params to rand or zeros.
@@ -168,7 +168,7 @@ class Dense(Base):
         # See if this can be done more elegantly, or if network needs to be an attribute of a layer.
         self._get_input_shape(network)
         self.params.weights = self.initiaize(self.shape, self.input_shape + int(self.bias))
-        self.__init_delta()  # TODO: Find a way to avoid for frozen.
+        self._init_delta()  # TODO: Find a way to avoid for frozen.
 
     def get_params(self):
         print(self, self.params)
@@ -181,14 +181,8 @@ class Dense(Base):
         return self.params.weights @ inp
 
     def backpropogate(self, error):
-        # feedback = np.diag(error) @ self._value  # NOTE: Observation! Diag was just equal to element wise multiplication
-        # feedback = error * self._value  # MEM
-        self._delta = error @ self._input.T
-        self.__update_delta(self._delta)  # MEM-MEM - # TODO: if frozen I can avoid having this variable
-        # NOTE: Here _delta is the sum from all samples, it should be mean, because if all samples 
-        # said we want to move +1, it will move +n which is wrong. I wonder how NN are then trained in
-        # parallel, because async addition is probably done. and the current method also trains by the way.
-        # maybe the sensitivty to learning rate was so high due to this addition. check that out. (Fix in RNN layer also)
+        _delta = (error @ self._input.T) / error.shape[1]  # Divide by number of samples for mean
+        self._update_delta(_delta)  # MEM-MEM - # TODO: if frozen I can avoid having this variable
         if self.bias:
             next_error = self.params.weights.T[:-1] @ error  # NOTE: Drops the biases from weights
         else:
@@ -199,7 +193,7 @@ class Dense(Base):
         # TODO: Since this layer now has just one kind of param, param class seems uneccesary. Remove if redundant
         if not self.params._freeze:
             self.params.weights -= optimizer.step(self.delta())
-        self.__init_delta()
+        self._init_delta()
 
 
 class Conv(Base):
@@ -207,7 +201,7 @@ class Conv(Base):
     Convolution is implimented as a Dense Layer
     '''
     def __init__(self, kernel_shape=(3,3), n_kernels=3, name=None):
-        super().__init__(self, name)
+        super().__init__(name)
         self.kernel_shape = kernel_shape
         self.n_kernels = n_kernels
         self.shape = (None, '*', '*', n_kernels)
@@ -228,19 +222,19 @@ class Conv(Base):
         self._get_input_shape(network)  # (batch, len, width, channels)
         mask_kernel = np.arange(1, self.kernel_shape[0]**2 + 1).reshape(self.kernel_shape)
         self.n_inp_channels = self.input_shape[3]
-        self._mask_weights = conv_mask(self.input_shape[1], mask_kernel)  # Assuming square images
+        self._mask_weights = utils.conv_mask(self.input_shape[1], mask_kernel)  # Assuming square images
         self.shape = (None, *self.__compute_shape(self.input_shape, self.kernel_shape), self.n_kernels)
         self.dense_layers = [
-                [Dense(self.shape[1] * self.shape[2], False, 'zeros', f'{self.name}_dense_[K{j}][C{i}]')
+                [Dense(self.shape[1] * self.shape[2], bias=False, initialization='zeros', name=f'{self.name}_dense_[K{j}][C{i}]')
                 for i in range(self.n_inp_channels)] 
                 for j in range(self.n_kernels)
             ]
         for kernel in range(self.n_kernels):
             for channel in range(self.n_inp_channels):
                 layer = self.dense_layers[kernel][channel]
-                layer.params.kernel = np.random.rand(self.kernel_shape)
-                layer.params.weights = conv_mask(self.input_shape[1], layer.params.kernel)
-                layer.__init_delta()
+                layer.params.kernel = np.random.rand(*self.kernel_shape)
+                layer.params.weights = utils.conv_mask(self.input_shape[1], layer.params.kernel)
+                layer._init_delta()
 
     def get_params(self):
         # TODO: Convert weights to kernels and print
@@ -250,22 +244,23 @@ class Conv(Base):
 
     def evaluate(self, inp):
         # NOTE: Input shape at this level is (batch, len, width, channels)
-        out = np.zeros(self.shape)
+        self._inp_shape = inp.shape
+        out = np.zeros((inp.shape[0], *self.shape[1:]))
         for kernel in range(self.n_kernels):
             for channel in range(self.n_inp_channels):
                 out[:, :, :, kernel] += self.dense_layers[kernel][channel](
-                    inp[:, :, :, channel].reshape(None, inp.shape[1] * inp.shape[2])
-                ).reshape(None, out.shape[1], out.shape[2], 1) 
+                    inp[:, :, :, channel].reshape(-1, inp.shape[1] * inp.shape[2]).T
+                ).reshape(-1, out.shape[1], out.shape[2]) 
                 # TODO: Try to use bias for each dense layer, so ul learn n_channel biases instead of one bias = sum(n_channel biases) which is okay i guess
         return out
 
     def backpropogate(self, error):
-        next_error = np.zeros(self.input_shape)
+        next_error = np.zeros(self._inp_shape)
         for kernel in range(self.n_kernels):
             for channel in range(self.n_inp_channels):
                 next_error[:, :, :, channel] += self.dense_layers[kernel][channel].backpropogate(
-                    error[:, :, :, kernel].reshape(None, error.shape[1] * error.shape[2])
-                ).reshape(None, next_error.shape[1], next_error.shape[2], 1)
+                    error[:, :, :, kernel].reshape(-1, error.shape[1] * error.shape[2]).T
+                ).reshape(-1, next_error.shape[1], next_error.shape[2])
         return next_error
 
     def update_params(self, optimizer):
@@ -274,7 +269,7 @@ class Conv(Base):
                 layer = self.dense_layers[kernel][channel]
                 for i in range(1, self.kernel_shape[0] * self.kernel_shape[1] + 1):
                     mask = self._mask_weights == i
-                    layer.__delta[mask] = layer.__delta[mask].mean()
+                    layer._delta[mask] = layer._delta[mask].mean()
                 layer.update_params(optimizer)
 
 
@@ -293,7 +288,8 @@ class Pool(Base):
         self._get_input_shape(network)
         self.shape = (-1, -(self.input_shape[1] // -self.window[0]), -(self.input_shape[2] // -self.window[1]), self.input_shape[3])
         # NOTE: This is ceil division. I will be padding appropriately so as to loose no information for indivisible pool size
-        self.padding = (self.window[0] - self.input_shape[1] % self.window[0], self.window[0] - self.input_shape[2] % self.window[1])
+        self.padding = (self.window[0] - self.input_shape[1] % self.window[0], self.window[1] - self.input_shape[2] % self.window[1])
+        self.padding = (self.padding[0] % self.window[0], self.padding[1] % self.window[1])  # In case zero padding is required above eqn given padding equal to window
 
     def _pad(self, inp):  # TODO: Test and check this padding operation, make padding a util if also used elsewhere
         pad_mode = 'minimum' if self.operation == 'max' else 'mean'
@@ -332,7 +328,7 @@ class Pool(Base):
 
     def backpropogate(self, error):
         s = self._s
-        error = out.reshape(-1)
+        error = error.reshape(-1)
         if self.operation == 'max':
             next_error = np.zeros(s['s'])
             next_error[list(range(next_error.shape[0])), self._mask] = error
@@ -343,7 +339,7 @@ class Pool(Base):
             .transpose(0, 1, 3, 2) \
             .reshape(s['bs'],  s['cx'], s['cy'], s['wx'], s['wy'], s['ch']) \
             .transpose(0,1,3,2,4,5) \
-            .reshape(self.input_shape)
+            .reshape(-1, *self.input_shape[1:])
         next_error = self._crop(next_error)
         return next_error
 
@@ -361,7 +357,7 @@ class Dropout(Base):
 
 
 class RNN(Base):
-    def __init__(self, network, name='None'):
+    def __init__(self, network, name=None):
         '''
         Note 'network' argument here is for the internal network of the RNN layer.
         '''
@@ -373,17 +369,14 @@ class RNN(Base):
         self.hidden_activation = activations.Tanh  # Hardcode for now
 
     def __repr__(self):
-        return f"Recurrent: {self.name}({self.shape})"
+        return f"{self.name}({self.shape}) <- Recurrent"
     
-    def __init_params(self, network):
+    def init_params(self, network):
         # TODO: Decide on using params class here.
         self._get_input_shape(network)
         self.recurrent_weights = np.random.rand(self.shape, self.shape)
         self._recurrent_delta = np.zeros(self.recurrent_weights.shape)
     
-    def __update_delta(self, _delta):
-        self._recurrent_delta += _delta
-
     def delta(self):
         return self._recurrent_delta
 
@@ -392,27 +385,84 @@ class RNN(Base):
         # TODO: Option to return entire sequence as numpy array
         self.output_sequence =  {}  # Output for RNN layer is equal to its state.
         self._input_sequence_length = len(inp)  # can be different for each sample. This is cached by the layer
-        self.output_sequence[-1] = np.copy(self.state)
-        # For single sample right now: (This will prbably work for batch aswell, test once.)
+        self.output_sequence[-1] = np.zeros((self.shape, len(inp.T)))
         for t in range(self._input_sequence_length): #This is 10xself.input_shape(8) -> a sequence of 10 items of size 8
-            self.output_sequence[t] = self.network(inp[t]) + self.output_sequence[t-1] @ self.recurrent_weights
+            self.output_sequence[t] = self.network(inp.T[:,t].reshape(-1,1).T) + self.recurrent_weights @ self.output_sequence[t-1]
         return self.output_sequence[t]
 
     def backpropogate(self, error):
         for t in reversed(range(self._input_sequence_length)):
-            self.network.backprop(error)
-            self._recurrent_delta += error @ self.output_sequence[t-1].T
-            error = self.reccurrent_weights.T @ error  # Same as dense layer
-            
+            self.network.backpropogate(error)
+            self._recurrent_delta += error @ self.output_sequence[t-1].T  / self.output_sequence[t-1].shape[1]
+            error = self.recurrent_weights.T @ error  # Same as dense layer
+        return error  # TODO: I dont know what to return here, 'self.network.backpropogate(error)' will also return something, what to do with that?
+
     def update_params(self, optimizer):
         self.network.optimizer = optimizer
         self.network.update_params()
-        self.recurrent_weights += optimizer.step(self.delta())
+        self.recurrent_weights -= optimizer.step(self.delta())
+        self._recurrent_delta = 0
 
 
 class Flatten(Base):
-    def __init__(self):
-        raise NotImplementedError
+    def __repr__(self):
+        return f"{self.name}({self.shape})"
+
+    def init_params(self, network):
+        self._get_input_shape(network)
+        _, a, b, c = self.input_shape
+        self.shape = a*b*c
+        
+    def evaluate(self, inp):
+        return inp.reshape(-1, self.shape).T
+
+    def backpropogate(self, error):
+        return error.reshape(self.input_shape)
+        
+
+class Relu(Base):
+    def __init__(self, threshold=0.0, name=None):
+        super().__init__(name)
+        self.threshold = threshold
+        self._activation = activations.Relu(threshold=threshold)
+
+    def evaluate(self, inp):
+        self._inp = inp  # MEM
+        return self._activation(inp)
+
+    def backpropogate(self, error):
+        return error * self._activation.delta(self._inp)
+
+
+class Sigmoid(Relu):
+    def __init__(self, name=None, scale=1):
+        # TODO: Create an activations base class
+        super().__init__(name)
+        self._activation = activations.Sigmoid(scale)
+
+
+class Tanh(Relu):
+    def __init__(self, name=None):
+        # TODO: Create an activations base class
+        super().__init__(name)
+        self._activation = activations.Tanh()
+
+
+class Softmax(Base):
+    def __init__(self, name=None):
+        super().__init__(name)
+        self._activation = activations.Softmax()
+    
+    def evaluate(self, inp):
+        self._out = self._activation(inp)
+        return self._out
+
+    def backpropogate(self, error):
+        DS = []
+        dS = self._activation.delta(self._out, cached=True)
+        for e, ds in zip(error.T, dS):
+            DS.append(ds @ e)
+        return np.array(DS).T
 
 
 class Reshape(Base):
@@ -438,44 +488,6 @@ class BatchNormalization(Base):
 class LayerNormalization(Base):
     def __init__(self):
         raise NotImplementedError
-
-
-class Relu(Base):
-    def __init__(self, threshold=0.0, name=None):
-        super().__init__(name)
-        self.threshold = threshold
-        self._activation = activations.Relu(threshold=threshold)
-
-    def evaluate(self, inp):
-        self._inp = inp  # MEM
-        return self._activation(inp)
-
-    def backpropogate(self, error):
-        return error * self._activation.delta(self._inp)
-
-
-class Sigmoid(Relu):
-    def __init__(self, name=None):
-        # TODO: Create an activations base class
-        super().__init__(name)
-        self._activation = activations.Sigmoid()
-
-
-class Softmax(Base):
-    def __init__(self, name=None):
-        super().__init__(name)
-        self._activation = activations.Softmax()
-    
-    def evaluate(self, inp):
-        self._out = self._activation(inp)
-        return self._out
-
-    def backpropogate(self, error):
-        DS = []
-        dS = self._activation.delta(self._out, cached=True)
-        for e, ds in zip(error.T, dS):
-            DS.append(ds @ e)
-        return np.array(DS).T
 
 
 class Add(Base):

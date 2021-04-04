@@ -8,9 +8,7 @@ from .utils import empty_copy
 
 def event(a: str):
     # TODO: Maybe have events as a context manager
-    # Placeholder
     pass
-
 
 class Network(Sequence):
     # TODO: Add easy selection of a subset of the network
@@ -96,6 +94,7 @@ class Network(Sequence):
         # TODO: Make batched dataset API which works as a generator.
         event('batch_start')
         error = self._learn(X, y)
+        self.update_params()  # TODO: This should be in a default callback setup
         event('batch_end')
         return error
     
@@ -123,8 +122,8 @@ class Network(Sequence):
             errors = [self.batch(batch.X, batch.y) for batch in batches]
         error = np.concatenate(errors, axis=-1)  # errors matrices from each batch concatenated
         event('epoch_end')
-        self.update_params()  # TODO: This should be in a default callback setup
-        return self.loss(error)
+        l = self.loss(error)
+        return l
 
     def train(
         self,
