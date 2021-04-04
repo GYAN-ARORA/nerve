@@ -1,4 +1,13 @@
 import numpy as np
+from typing import Optional, Union
+
+from .data import Dataset, Batch
+
+
+def event(a: str):
+    # TODO: Maybe have events as a context manager
+    # Placeholder
+    pass
 
 
 class Network:
@@ -33,26 +42,6 @@ class Network:
         for layer in self.layers:
             layer.update_params(self.optimizer)
 
-    def epoch(self, X, y):
-        # TODO: Make a similar function for a batch
-        # TODO: Remove this loop and pass in the entire matrix
-        # TODO: Find out how to report loss, rmse of individual neuron errors, or first just add errors and then rmse?
-        # epoch_error = np.zeros(self.layers[-1].shape)
-        activation = self.evaluate(X)
-        error = activation - y
-        self.backpropogate(error)
-        
-        # for sample_X, sample_y in zip(X, y):
-        #     activation = self.evaluate(sample_X)
-        #     error = activation - sample_y
-        #     self.backpropogate(error)
-        #     epoch_error += error**2  # TODO: Hard coded for RMSE
-            # self.network.backpropogate(error)
-            # loss = self.loss(activation, y)
-            # losses.append(loss)
-        self.update_params()  # TODO: This should be in a default callback setup
-        return self.loss(error)
-
     def prepare(self, loss, optimizer, epochs):
         # TODO: Rename this function
         # TODO: Have these things also come in init?
@@ -60,10 +49,58 @@ class Network:
         self.optimizer = optimizer
         self.epochs = epochs
 
-    def train(self, X, y):
+    def _learn(self, X, y):
+        # NOTE: Transpose at this level because the network sees the data vertically and the users like to see horizontally.
+        activation = self.evaluate(X.T)
+        error = activation - y.T
+        self.backpropogate(error)
+        return error
+
+    def batch(self, X: np.ndarray, y: np.ndarray):
+        # TODO: Make batched dataset API which works as a generator.
+        event('batch_start')
+        error = self._learn(X, y)
+        event('batch_end')
+        return error
+    
+    def epoch(
+        self,
+        data: Optional[Union[Dataset, Batch]]  = None,
+        X: Optional[Union[np.ndarray, Batch]] = None,
+        y: Optional[Union[np.ndarray, Batch]] = None
+    ):
+        # TODO: Find out how to report loss, rmse of individual neuron errors, or first just add errors and then rmse?
+        # TODO: Clean this if-else
+        if X is not None and y is not None and isinstance(X, Batch) and isinstance(y, Batch):
+            event('epoch_start')
+            errors = [self.batch(xb, yb) for xb, yb in zip(x, y)]
+        else:
+            if X is not None and y is not None and isinstance(X, np.ndarray) and isinstance(y, np.ndarray):
+                batches = Batch(Dataset(X, y), -1) 
+            elif isinstance(data, Dataset):
+                batches = Batch(data, -1)
+            elif isinstance(data, Batch):
+                batches = data
+            else:
+                raise TypeError('Invalid input datatype')
+            event('epoch_start')
+            errors = [self.batch(batch.X, batch.y) for batch in batches]
+        error = np.concatenate(errors, axis=-1)  # errors matrices from each batch concatenated
+        event('epoch_end')
+        self.update_params()  # TODO: This should be in a default callback setup
+        return self.loss(error)
+
+    def train(
+        self,
+        data: Optional[Union[Dataset, Batch]]  = None,
+        X: Optional[Union[np.ndarray, Batch]] = None,
+        y: Optional[Union[np.ndarray, Batch]] = None
+    ):
         # TODO: Implement callbacks here for various things
         # TODO: Make this class extendible and for people to be able to write custom training loops
-        losses = [self.epoch(X,y) for i in range(self.epochs)]
+        event('train_start')
+        losses = [self.epoch(data, X, y) for i in range(self.epochs)]
+        event('train_end')        
         return losses
 
     # TODO: The backprop formula has been derived for rmse whose diff is just error (act-pred).

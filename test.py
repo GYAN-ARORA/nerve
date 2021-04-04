@@ -40,14 +40,14 @@ print(network(X[0,4].reshape(1,1)), y[0, 4])
 
 # '''
 # 1 X 3 X 4 X 2 -- binary classifier
-X = np.array([list(range(20))]).reshape(1, 20)
+X = np.array([list(range(20))]).reshape(20, 1)
 y = np.array([[0]*10 + [1]*10])
 
 
 def one_hot(a):
     # TODO: Make this function better and keep class mapping
     num_classes = len(np.unique(a))
-    return np.squeeze(np.eye(num_classes)[a.reshape(-1)]).T
+    return np.squeeze(np.eye(num_classes)[a.reshape(-1)])
 
 y = one_hot(y)
 X = scale(X)
@@ -63,12 +63,24 @@ network = nerve.Network(layers=[
 loss = nerve.loss.rmse
 optimizer = nerve.optimizers.GradientDescentOptimizer(0.001)
 network.prepare(loss, optimizer, 1000)
-print(network(X[0,4].reshape(1,1)), y[:, 4])
-print(network(X[0,16].reshape(1,1)), y[:, 16])
+print(network(X[4].reshape(1,1)), y[4])
+print(network(X[16].reshape(1,1)), y[16])
 # network.get_params()
-network.epoch(X, y)
-network.train(X, y)
+# network.epoch(X=X, y=y)
+# network.train(X=X, y=y)
 # network.get_params()
-print(network(X[0,4].reshape(1,1)), y[:, 4])
-print(network(X[0,16].reshape(1,1)), y[:, 16])
+# print(network(X[4].reshape(1,1)), y[4])
+# print(network(X[16].reshape(1,1)), y[16])
+# '''
+
+# '''
+# Batch API Test
+data = nerve.data.Dataset(X, y)
+data = nerve.data.Batch(data, 6)
+# network.epoch(data)
+network.train(data)
+# network.get_params()
+print(network(X[4].reshape(1,1)), y[4])
+print(network(X[16].reshape(1,1)), y[16])
+
 # '''

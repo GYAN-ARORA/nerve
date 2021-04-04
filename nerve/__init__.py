@@ -3,5 +3,6 @@ from nerve import (
     activations,
     layers,
     loss,
-    optimizers
+    optimizers,
+    data
 )
