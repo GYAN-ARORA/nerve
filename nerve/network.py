@@ -50,7 +50,7 @@ class Network(Sequence):
 
     def _init_params(self):
         for layer in self.layers:
-            layer._init_params(self)
+            layer.init_params(self)
 
     def copy(self):
         return deepcopy(self)

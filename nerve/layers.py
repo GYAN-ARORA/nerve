@@ -2,7 +2,7 @@ import numpy as np
 from copy import deepcopy
 from abc import ABC, abstractclassmethod
 
-from .activations import Linear
+from . import activations
 
 class Params:
     def __init__(self, frozen=False, **kwargs):
@@ -51,7 +51,19 @@ class Base(ABC):
 
     # def __copy__(self): Not implimented here, will be needed when building the neuron level API.
     
-    def _init_params(self, network):
+    def init_params(self, network):
+        if not hasattr(self, 'shape'):
+            self_index = network.index(self)
+            if self_index == 0:
+                raise TypeError('Network should start with "Input" layer')  # TODO: Make custom error here.
+            self.shape = network[self_index - 1].shape  # Transfering shape for shapeless layers.
+
+    # @abstractclassmethod
+    # TODO: Decide wether this should be abstract. The delima is that this is called by default callback, 
+    # so if someone has implemented a new layer and forgot to impliment this function. Otherwise I have to 
+    # implment this unnecssarily in so many layers which dont have params.
+    def update_params(self, optimizer):
+        # raise NotImplementedError('BaseLayer has no params')
         pass
 
     @property
@@ -73,10 +85,6 @@ class Base(ABC):
     def backpropogate(self, error):
         raise NotImplementedError('BaseLayer cannot be propgated')
 
-    @abstractclassmethod
-    def update_params(self, optimizer):
-        raise NotImplementedError('BaseLayer has no params')
-
 
 class Input(Base):
     def __init__(self, shape, name=None):
@@ -92,15 +100,11 @@ class Input(Base):
     def backpropogate(self, error):
         return error
 
-    def update_params(self, optimizer):
-        pass
-
 
 class Dense(Base):
-    def __init__(self, shape, activation=Linear(), bias=True, initialization='random', name=None):
+    def __init__(self, shape, bias=True, initialization='random', name=None):
         super().__init__(name)
         self.shape = shape
-        self.activation = activation
         self.bias = bias
         self.initiaize = self._init_method(initialization)
         self.params = Params(weights=None)
@@ -136,10 +140,10 @@ class Dense(Base):
         elif callable(initialization):
             return initialization
 
-    def _init_params(self, network):
+    def init_params(self, network):
         # TODO: Network object is passed to each of its layers, and layers were passed to the network when created.
         # See if this can be done more elegantly, or if network needs to be an attribute of a layer.
-        index = network.layers.index(self)
+        index = network.index(self)
         self.params.weights = self.initiaize(self.shape, network.layers[index-1].shape + int(self.bias))
         self.__init_delta()  # TODO: Find a way to avoid for frozen.
 
@@ -150,18 +154,21 @@ class Dense(Base):
         if self.bias:
             inp = np.append(inp, np.ones((1, inp.shape[-1])), axis=0)  # NOTE: Adds '1' for bias
         self._input = inp  # MEM: Immidiate computation is persisted in memory
-        self._value = self.params.weights @ inp  # MEM
-        return self.activation(self._value)
+        return self.params.weights @ inp  # MEM
 
     def backpropogate(self, error):
-        # feedback = np.diag(error) @ self.activation.delta(self._value)  # NOTE: Observation! Diag was just equal to element wise multiplication
-        feedback = error * self.activation.delta(self._value)  # MEM
-        self._delta = feedback @ self._input.T
+        # feedback = np.diag(error) @ self._value  # NOTE: Observation! Diag was just equal to element wise multiplication
+        # feedback = error * self._value  # MEM
+        self._delta = error @ self._input.T
         self.__update_delta(self._delta)  # MEM-MEM - # TODO: if frozen I can avoid having this variable
+        # NOTE: Here _delta is the sum from all samples, it should be mean, because if all samples 
+        # said we want to move +1, it will move +n which is wrong. I wonder how NN are then trained in
+        # parallel, because async addition is probably done. and the current method also trains by the way.
+        # maybe the sensitivty to learning rate was so high due to this addition. check that out.
         if self.bias:
-            next_error = self.params.weights.T[:-1] @ feedback  # NOTE: Drops the biases from weights
+            next_error = self.params.weights.T[:-1] @ error  # NOTE: Drops the biases from weights
         else:
-            next_error = self.params.weights.T @ feedback
+            next_error = self.params.weights.T @ error
         return next_error
 
     def update_params(self, optimizer):
@@ -169,3 +176,96 @@ class Dense(Base):
         if not self.params._frozen:
             self.params.weights -= optimizer.step(self.delta())
         self.__init_delta()
+
+
+class Conv(Dense):
+    '''
+    Convolution is implimented as a Dense Layer
+    '''
+    def __init__(self, kernel_size, n_kernels):
+        # super('Base', self).__init__()
+        raise NotImplementedError
+
+
+class Pool(Base):
+    def __init__(self):
+        raise NotImplementedError
+
+
+class Dropout(Base):
+    def __init__(self):
+        raise NotImplementedError
+
+
+class Flatten(Base):
+    def __init__(self):
+        raise NotImplementedError
+
+
+class Reshape(Base):
+    def __init__(self):
+        raise NotImplementedError
+
+
+class Cropping(Base):
+    def __init__(self):
+        raise NotImplementedError
+
+
+class Padding(Base):
+    def __init__(self):
+        raise NotImplementedError
+
+
+class BatchNormalization(Base):
+    def __init__(self):
+        raise NotImplementedError
+
+
+class LayerNormalization(Base):
+    def __init__(self):
+        raise NotImplementedError
+
+
+class Relu(Base):
+    def __init__(self, threshold=0.0, name=None):
+        super().__init__(name)
+        self.threshold = threshold
+        self._activation = activations.Relu(threshold=threshold)
+
+    def evaluate(self, inp):
+        self._inp = inp  # MEM
+        return self._activation(inp)
+
+    def backpropogate(self, error):
+        return error * self._activation.delta(self._inp)
+
+
+class Softmax(Base):
+    def __init__(self):
+        raise NotImplementedError
+
+
+class Add(Base):
+    def __init__(self):
+        raise NotImplementedError
+
+
+class Multiply(Base):
+    def __init__(self):
+        raise NotImplementedError
+
+
+class MaxMin(Base):
+    def __init__(self):
+        raise NotImplementedError
+
+
+class Avg(Base):
+    def __init__(self):
+        raise NotImplementedError
+
+
+class Dot(Base):
+    def __init__(self):
+        raise NotImplementedError
