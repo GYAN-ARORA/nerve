@@ -1,6 +1,8 @@
 import numpy as np
+from copy import deepcopy
 from abc import ABC, abstractclassmethod
 
+from .activations import Linear
 
 class Params:
     def __init__(self, frozen=False, **kwargs):
@@ -29,23 +31,38 @@ class Base(ABC):
     def __init__(self, name=None):
         Base.count += 1
         self.id = Base.count
-        self._get_name(name)
+        self._name = name
 
-    def __str__(self):
+    def __repr__(self):
         return self.name
 
-    # TODO: Write repr for the classes
     def __call__(self, inp):
         return self.evaluate(inp)
 
-    def _get_name(self, name):
-        self.name = name or f"{self.__class__.__name__}_{self.id}"
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            setattr(result, k, deepcopy(v, memo))
+        Base.count += 1
+        result.id = Base.count
+        return result
 
+    # def __copy__(self): Not implimented here, will be needed when building the neuron level API.
+    
     def _init_params(self, network):
         pass
 
+    @property
+    def name(self):
+        return f"[{self.id}]{self._name or self.__class__.__name__}"
+
     def get_params(self):
         print(self.name, [])
+
+    def copy(self):
+        return deepcopy(self)
 
     @abstractclassmethod
     def evaluate(self, inp):
@@ -66,7 +83,7 @@ class Input(Base):
         super().__init__(name)
         self.shape = shape
 
-    def __str__(self):
+    def __repr__(self):
         return f"{self.name}({self.shape})"
 
     def evaluate(self, inp):
@@ -80,7 +97,7 @@ class Input(Base):
 
 
 class Dense(Base):
-    def __init__(self, shape, activation, bias=True, initialization='random', name=None):
+    def __init__(self, shape, activation=Linear(), bias=True, initialization='random', name=None):
         super().__init__(name)
         self.shape = shape
         self.activation = activation
@@ -92,7 +109,7 @@ class Dense(Base):
         # TODO: Find what is the logic behind protected and private vars.
         # self.input OR self._input OR self.__input
 
-    def __str__(self):
+    def __repr__(self):
         return f"{self.name}({self.shape})"
 
     def __init_delta(self):
@@ -134,17 +151,12 @@ class Dense(Base):
             inp = np.append(inp, np.ones((1, inp.shape[-1])), axis=0)  # NOTE: Adds '1' for bias
         self._input = inp  # MEM: Immidiate computation is persisted in memory
         self._value = self.params.weights @ inp  # MEM
-        # print('Input:', self._input)
-        # print('Value:', self._value)
         return self.activation(self._value)
 
     def backpropogate(self, error):
-        # print('Error:', error.shape)
         # feedback = np.diag(error) @ self.activation.delta(self._value)  # NOTE: Observation! Diag was just equal to element wise multiplication
         feedback = error * self.activation.delta(self._value)  # MEM
-        # print('Fdbck:', feedback.shape)
         self._delta = feedback @ self._input.T
-        # print('Delta:', self._delta.shape)
         self.__update_delta(self._delta)  # MEM-MEM - # TODO: if frozen I can avoid having this variable
         if self.bias:
             next_error = self.params.weights.T[:-1] @ feedback  # NOTE: Drops the biases from weights

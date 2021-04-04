@@ -1,8 +1,10 @@
 import numpy as np
+from copy import deepcopy
+from collections import Sequence
 from typing import Optional, Union
 
 from .data import Dataset, Batch
-
+from .utils import empty_copy
 
 def event(a: str):
     # TODO: Maybe have events as a context manager
@@ -10,18 +12,52 @@ def event(a: str):
     pass
 
 
-class Network:
+class Network(Sequence):
     # TODO: Add easy selection of a subset of the network
+    # TODO: Add strict type check for __init__, 'layers', check with babse Layer class
     def __init__(self, layers):
         self.layers = layers
         self._init_params()
 
+    def __len__(self):
+        return len(self.layers)
+    
+    def __getitem__(self, sliced):
+        if isinstance(sliced, slice):
+            slyce = self.__copy__()
+            slyce.layers = slyce.layers[sliced]
+            return slyce
+        else:
+            return self.layers[sliced]
+    
+    def __copy__(self):
+        copy = empty_copy(self)
+        copy.layers = self.layers
+        return copy
+
+    def __add__(self, network):
+        # TODO: Do a compaitibility check. You can try to evaluate a sample, if if fails, give the traceback
+        # NOTE: Observation! Because most of the state is held by the layers, this was so simple to do.
+        new = empty_copy(self)
+        new.layers = [deepcopy(layer) for layer in self.layers + network.layers]
+        return new
+    
     def __call__(self, inp):
         return self.evaluate(inp)
+
+    def __repr__(self):
+        return '\n'.join([str(layer) for layer in self.layers])
 
     def _init_params(self):
         for layer in self.layers:
             layer._init_params(self)
+
+    def copy(self):
+        return deepcopy(self)
+
+    def show(self):
+        for layer in self.layers:
+            print(layer)
 
     def get_params(self):  # TODO: If Params in layer is made redundant change this API to params()
         for layer in self.layers:
@@ -106,3 +142,5 @@ class Network:
     # TODO: The backprop formula has been derived for rmse whose diff is just error (act-pred).
     # Need to recalc for any other metric and a way to put that into the formula.
     # Need to check if changing loss metric will make a difference, if yes how?
+
+
