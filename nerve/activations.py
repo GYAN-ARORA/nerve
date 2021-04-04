@@ -3,19 +3,19 @@
 # function defs are there. Maybe add a decorator that makes them all static and ads call function
 
 import numpy as np
+from abc import abstractmethod
 
 # TODO: How to stop users from using this base activation class directly. Make it unimportable/callable
 class Activation:
-    @classmethod
-    def __call__(cls, x):  
-        return cls.evaluate(x)
+    def __call__(self, x):  
+        return self.evaluate(x)
 
-    @staticmethod  # TODO: Make this abstract method and see
-    def evaluate(x):
+    @abstractmethod
+    def evaluate(self, x):
         pass
 
-    @staticmethod
-    def delta(x):
+    @abstractmethod
+    def delta(self, x):
         pass
 
 
@@ -23,12 +23,10 @@ class Linear(Activation):
     def __init__(self, slope: float = 1.0):
         self.slope = slope
         
-    @staticmethod
-    def evaluate(x):
+    def evaluate(self, x):
         return self.slope * x
 
-    @staticmethod
-    def delta(x):
+    def delta(self, x):
         return self.slope * np.ones(x.shape)
 
 
@@ -36,13 +34,13 @@ class Relu(Activation):
     def __init__(self, threshold: float = 0.0):
         self.thresh = threshold
     
-    @staticmethod
-    def evaluate(x):
+    def evaluate(self, x):
+        x = x.copy()
         x[x < self.thresh] = 0
         return x
 
-    @staticmethod
-    def delta(x):
+    def delta(self, x):
+        x = x.copy()
         x[x <= self.thresh] = 0
         x[x > self.thresh] = 1
         return x
@@ -52,13 +50,11 @@ class LeakyRelu(Activation):
     def __init__(self, threshold: float = 0.0, damper: float = 0.01):
         self.thresh = threshold
     
-    @staticmethod
-    def evaluate(x):
+    def evaluate(self, x):
         x[x < self.thresh] *= damper
         return x
 
-    @staticmethod
-    def delta(x):
+    def delta(self, x):
         x[x < self.thresh] = damper
         x[x >= self.thresh] = 1
         return x
@@ -68,25 +64,21 @@ class Elu(Activation):
     def __init__(self, threshold: float = 0.0, damper: float = 0.01):
         self.thresh = threshold
     
-    @staticmethod
-    def evaluate(x):
+    def evaluate(self, x):
         x[x < self.thresh] = damper * (np.exp(x[x < self.thresh]) - 1)
         return x
 
-    @staticmethod
-    def delta(x):
+    def delta(self, x):
         x[x < self.thresh] = damper * (np.exp(x[x < self.thresh]))
         x[x >= self.thresh] = 1
         return x
 
 
 class Sigmoid(Activation):
-    @staticmethod
-    def evaluate(x):
+    def evaluate(self, x):
         return 1/(1 + np.exp(-x))
 
-    @staticmethod
-    def delta(x):
+    def delta(self, x):
         s = self.evaluate(x)
         return s(1-s)
 
@@ -95,35 +87,29 @@ class Step(Activation):
     def __init__(self, threshold: float = 0.0):
         self.thresh = threshold
 
-    @staticmethod
-    def evaluate(x):
+    def evaluate(self, x):
         x[x < self.thresh] = 0
         x[x >= self.thresh] = 1
         return x
 
-    @staticmethod
-    def delta(x):
+    def delta(self, x):
         return 0
 
 
 class Tanh(Activation):
-    @staticmethod
-    def evaluate(x):
+    def evaluate(self, x):
         return np.tanh(x)
 
-    @staticmethod
-    def delta(x):
+    def delta(self, x):
         return 1 - np.tanh(x)**2
 
 
 class Softmax(Activation):
     # TODO: Pending
-    @staticmethod
-    def evaluate(x):
+    def evaluate(self, x):
         z = np.exp(x)
         return z/z.sum()
 
-    @staticmethod
-    def delta(x):
+    def delta(self, x):
         # return 1 - np.tanh(x)**2
         raise NotImplementedError
