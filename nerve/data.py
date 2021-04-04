@@ -1,6 +1,8 @@
 from collections import Sequence
 import numpy as np
 
+from .utils import empty_copy
+
 # NOTE: All shuffle etc functions to be added to this API, 
 # then its X and y property to be accesses by network. If 
 # there is any preprocessing to be done that nerve does not
@@ -24,11 +26,22 @@ class Dataset(Sequence):
     def __len__(self):
         return len(self.data)
 
+    def __repr__(self):
+        return 'nerve.Dataset(' + repr(self.data) +')'
+
+    def __copy__(self):
+        newcopy = empty_copy(self)
+        newcopy._y = self._y
+        newcopy.data = self.data
+        return newcopy
+
     def __getitem__(self, sliced):
-        slyce = self.__class__(np.array([]), np.array([]))
-        slyce._y = self._y
-        slyce.data = self.data[sliced]
+        slyce = self.__copy__()
+        slyce.data = slyce.data[sliced]
         return slyce
+
+    def copy(self):
+        return copy.deepcopy(self)
 
     @staticmethod
     def merge(X, y):
@@ -67,6 +80,9 @@ class Batch:
     
     def __iter__(self):
         return self
+
+    def copy(self):
+        return copy.deepcopy(self)
 
 
 
