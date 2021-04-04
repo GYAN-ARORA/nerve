@@ -35,12 +35,10 @@ class Relu(Activation):
         self.thresh = threshold
     
     def evaluate(self, x):
-        x = x.copy()
         x[x < self.thresh] = 0
         return x
 
     def delta(self, x):
-        x = x.copy()
         x[x <= self.thresh] = 0
         x[x > self.thresh] = 1
         return x

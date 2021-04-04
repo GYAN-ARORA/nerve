@@ -66,8 +66,8 @@ network = nerve.Network(layers=[
 ])
 
 loss = nerve.loss.rmse
-optimizer = nerve.optimizers.GradientDescentOptimizer(0.001)
-network.prepare(loss, optimizer, 10000)
+optimizer = nerve.optimizers.GradientDescentOptimizer(0.01)
+network.prepare(loss, optimizer, 1000)
 print(network(X[4].reshape(1,1)), y[4])
 print(network(X[16].reshape(1,1)), y[16])
 # network.get_params()
@@ -89,3 +89,4 @@ print(network(X[4].reshape(1,1)), y[4])
 print(network(X[16].reshape(1,1)), y[16])
 
 '''
+
