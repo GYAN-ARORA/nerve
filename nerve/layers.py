@@ -8,16 +8,16 @@ from . import activations
 
 
 class Params:
-    def __init__(self, frozen=False, **kwargs):
-        self._frozen = frozen
+    def __init__(self, freeze=False, **kwargs):
+        self._freeze = freeze
         for arg in kwargs:
             self.__setattr__(arg, kwargs[arg])
 
     def freeze(self):
-        self._frozen = True
+        self._freeze = True
 
     def unfreeze(self):
-        self._frozen = False
+        self._freeze = False
 
     def __str__(self):
         return str(self.__dict__)
@@ -28,6 +28,7 @@ class Params:
 
 
 # TODO: Decide between keeping a base class or just treating Input layer as base without making it abstract
+# TODO: Add all compulsary params as None in base class like shape, input_shape, etc.
 class Base(ABC):
     count = 0
 
@@ -35,6 +36,7 @@ class Base(ABC):
         Base.count += 1
         self.id = Base.count
         self._name = name
+        self._freeze = False
 
     def __repr__(self):
         return self.name
@@ -54,12 +56,30 @@ class Base(ABC):
 
     # def __copy__(self): Not implimented here, will be needed when building the neuron level API.
     
-    def init_params(self, network):
-        if not hasattr(self, 'shape'):
-            self_index = network.index(self)
-            if self_index == 0:
+    def _get_input_shape(self, network):
+        '''
+        Most layers will need this
+        '''
+        self_index = network.index(self)
+        if self_index == 0: 
+            if isinstance(self, Input):
+                self.input_shape = self.shape
+            else:
                 raise TypeError('Network should start with "Input" layer')  # TODO: Make custom error here.
-            self.shape = network[self_index - 1].shape  # Transfering shape for shapeless layers.
+        else:
+            self.input_shape = network[self_index - 1].shape
+
+    def init_params(self, network):
+        self._get_input_shape(network)
+        if not hasattr(self, 'shape'):
+            self.shape = self.input_shape  # Transfering shape for shapeless layers.
+
+    def freeze(self):
+        self._freeze = True
+
+    def unfreeze(self):
+        self._freeze = False
+
 
     # @abstractclassmethod
     # TODO: Decide wether this should be abstract. The delima is that this is called by default callback, 
@@ -146,8 +166,7 @@ class Dense(Base):
     def init_params(self, network):
         # TODO: Network object is passed to each of its layers, and layers were passed to the network when created.
         # See if this can be done more elegantly, or if network needs to be an attribute of a layer.
-        index = network.index(self)
-        self.input_shape = network.layers[index-1].shape
+        self._get_input_shape(network)
         self.params.weights = self.initiaize(self.shape, self.input_shape + int(self.bias))
         self.__init_delta()  # TODO: Find a way to avoid for frozen.
 
@@ -178,17 +197,17 @@ class Dense(Base):
 
     def update_params(self, optimizer):
         # TODO: Since this layer now has just one kind of param, param class seems uneccesary. Remove if redundant
-        if not self.params._frozen:
+        if not self.params._freeze:
             self.params.weights -= optimizer.step(self.delta())
         self.__init_delta()
 
 
-class Conv():
+class Conv(Base):
     '''
     Convolution is implimented as a Dense Layer
     '''
     def __init__(self, kernel_shape=(3,3), n_kernels=3, name=None):
-        Base.__init__(self, name)
+        super().__init__(self, name)
         self.kernel_shape = kernel_shape
         self.n_kernels = n_kernels
         self.shape = (None, '*', '*', n_kernels)
@@ -206,8 +225,7 @@ class Conv():
         return (img_len, img_width)
     
     def init_params(self, network):
-        index = network.index(self)
-        self.input_shape = network[index-1].shape  # (batch, len, width, channels)
+        self._get_input_shape(network)  # (batch, len, width, channels)
         mask_kernel = np.arange(1, self.kernel_shape[0]**2 + 1).reshape(self.kernel_shape)
         self.n_inp_channels = self.input_shape[3]
         self._mask_weights = conv_mask(self.input_shape[1], mask_kernel)  # Assuming square images
@@ -259,15 +277,87 @@ class Conv():
                     layer.__delta[mask] = layer.__delta[mask].mean()
                 layer.update_params(optimizer)
 
+
 class Pool(Base):
-    def __init__(self):
-        raise NotImplementedError
+    def __init__(self, operation='max', window_size=(2,2), name=None):
+        super().__init__(name)
+        if operation not in ['max', 'avg']:
+            raise ValueError("operation argument must be one of 'max' or 'avg'")
+        self.operation = operation
+        self.window = window_size
+
+    def __repr__(self):
+        return f"{self.name}{self.window}"
+
+    def init_params(self, network):
+        self._get_input_shape(network)
+        self.shape = (-1, -(self.input_shape[1] // -self.window[0]), -(self.input_shape[2] // -self.window[1]), self.input_shape[3])
+        # NOTE: This is ceil division. I will be padding appropriately so as to loose no information for indivisible pool size
+        self.padding = (self.window[0] - self.input_shape[1] % self.window[0], self.window[0] - self.input_shape[2] % self.window[1])
+
+    def _pad(self, inp)  # TODO: Test and check this padding operation, make padding a util if also used elsewhere
+        pad_mode = 'minimum' if self.operation == 'max' else 'mean'
+        pad_width = ((0,0), (0, self.padding[0]), (0, self.padding[1]), (0,0))
+        stat_len = ((1, 1), (1, self.window[0] - self.padding[0]), (1, self.window[1] - self.padding[1]), (1, 1))  # (1,1) does nothing, just to avoid error
+        return np.pad(inp, pad_width=pad_width, mode=pad_mode, stat_length=stat_len)
+    
+    def _crop(self, inp):
+        return inp[:, :self.input_shape[1], :self.input_shape[2], :]
+
+    def evaluate(self, inp):
+        inp = self._pad(inp)
+        s = {
+            'bs':inp.shape[0],
+            'cx':int(inp.shape[1]/self.window[0]),
+            'cy':int(inp.shape[2]/self.window[1]),
+            'wx':self.window[0],
+            'wy':self.window[1],
+            'ch':inp.shape[3]
+        }
+        inp = inp \
+            .reshape(s['bs'],  s['cx'], s['wx'], s['cy'], s['wy'], s['ch']) \
+            .transpose(0,1,3,2,4,5) \
+            .reshape(s['bs'], -1, s['wx']*s['wy'], s['ch']) \
+            .transpose(0,1,3,2) \
+            .reshape(-1, s['wx']*s['wy'])
+        s['s'] = inp.shape
+        self._s = s
+
+        if self.operation == 'max':
+            self._mask = np.argmax(inp, axis=-1)  # MEM
+            out = np.max(inp, axis=-1).reshape(self.shape)
+        elif self.operation == 'avg':
+            out = np.mean(inp, axis=-1).reshape(self.shape)
+        return out
+
+    def backpropogate(self, error):
+        s = self._s
+        error = out.reshape(-1)
+        if self.operation == 'max':
+            next_error = np.zeros(s['s'])
+            next_error[list(range(next_error.shape[0])), self._mask] = error
+        elif self.operation == 'avg':
+            next_error = np.ones(s['s']) * error[:, np.newaxis]/len(error)
+        next_error = next_error \
+            .reshape(s['bs'], -1, s['ch'], s['wx']*s['wy']) \
+            .transpose(0, 1, 3, 2) \
+            .reshape(s['bs'],  s['cx'], s['cy'], s['wx'], s['wy'], s['ch']) \
+            .transpose(0,1,3,2,4,5) \
+            .reshape(self.input_shape)
+        next_error = self._crop(next_error)
+        return next_error
 
 
 class Dropout(Base):
-    def __init__(self):
-        raise NotImplementedError
+    def __init__(self, drop_prob):
+        self.drop_prob = drop_prob
 
+    def evaluate(self, inp):
+        self.mask = np.random.binomial(1, 1 - self.drop_prob, inp.shape) if not self._freeze else 1 - self.drop_prob
+        return inp * self.mask
+
+    def backpropogate(self, error):
+        return error * self.mask
 
 class Flatten(Base):
     def __init__(self):
