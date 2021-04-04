@@ -24,10 +24,9 @@ class Network:
             step = layer(step)
         return step
 
-    def backpropogate(self, inp):
-        propogated_error = inp
+    def backpropogate(self, error):
         for layer in reversed(self.layers):
-            propogated_error = layer.backpropogate(propogated_error)
+            error = layer.backpropogate(error)
 
     def update_params(self):
         # TODO: Here I do have the opportunity to have a different optimizer for each layer if that makes sense
@@ -38,17 +37,21 @@ class Network:
         # TODO: Make a similar function for a batch
         # TODO: Remove this loop and pass in the entire matrix
         # TODO: Find out how to report loss, rmse of individual neuron errors, or first just add errors and then rmse?
-        epoch_error = np.zeros(self.layers[-1].shape)
-        for sample_X, sample_y in zip(X, y):
-            activation = self.evaluate(sample_X)
-            error = activation - sample_y
-            self.backpropogate(error)
-            epoch_error += error**2  # TODO: Hard coded for RMSE
+        # epoch_error = np.zeros(self.layers[-1].shape)
+        activation = self.evaluate(X)
+        error = activation - y
+        self.backpropogate(error)
+        
+        # for sample_X, sample_y in zip(X, y):
+        #     activation = self.evaluate(sample_X)
+        #     error = activation - sample_y
+        #     self.backpropogate(error)
+        #     epoch_error += error**2  # TODO: Hard coded for RMSE
             # self.network.backpropogate(error)
             # loss = self.loss(activation, y)
             # losses.append(loss)
         self.update_params()  # TODO: This should be in a default callback setup
-        return (epoch_error / len(X)).mean()  # TODO: Read above
+        return self.loss(error)
 
     def prepare(self, loss, optimizer, epochs):
         # TODO: Rename this function

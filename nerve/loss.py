@@ -1,3 +1,6 @@
-def rmse(x, y):
-    return ((x - y)**2).mean()**0.5
+def mse(error):
+    return (error**2).mean()
+
+def rmse(error):
+    return mse(error)**0.5
 

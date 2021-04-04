@@ -9,7 +9,7 @@ def scale(X):
     return X
 
 
-# '''
+'''
 # Simple Linear Regressor
 activation = nerve.activations.Identity()
 network = nerve.Network(
@@ -18,32 +18,36 @@ network = nerve.Network(
         nerve.layers.Dense(1, activation, bias=True)
     ]
 )
-X = np.array(list(range(20))).reshape(20, 1)
+X = np.array(list(range(20))).reshape(1, 20)
 X = scale(X)  # Experiment without scale
 y = X * 2.5 + 0.3
 
-loss = nerve.loss.rmse
+loss = nerve.loss.mse
 optimizer = nerve.optimizers.GradientDescentOptimizer(0.01)
-network.prepare(loss, optimizer, 5000)
-print(network(X[4]), y[4])
+network.prepare(loss, optimizer, 10000)
+print(network(X[0,4].reshape(1,1)), y[0, 4])
 network.get_params()
 # network.epoch(X,y)
-losses = network.train(X, y)
+import time
+t = time.time()
+losses = network.train(X, y)  # 8.9s
+print(time.time() - t)
 network.get_params()
 # print(losses)
-print(network(X[4]), y[4])
-# '''
+print(network(X[0,4].reshape(1,1)), y[0, 4])
+'''
 
 
 # '''
 # 1 X 3 X 4 X 2 -- binary classifier
-X = np.array([list(range(20))]).reshape(20, 1)
+X = np.array([list(range(20))]).reshape(1, 20)
 y = np.array([[0]*10 + [1]*10])
 
 
 def one_hot(a):
+    # TODO: Make this function better and keep class mapping
     num_classes = len(np.unique(a))
-    return np.squeeze(np.eye(num_classes)[a.reshape(-1)])
+    return np.squeeze(np.eye(num_classes)[a.reshape(-1)]).T
 
 y = one_hot(y)
 X = scale(X)
@@ -57,10 +61,14 @@ network = nerve.Network(layers=[
 ])
 
 loss = nerve.loss.rmse
-optimizer = nerve.optimizers.GradientDescentOptimizer(0.01)
-network.prepare(loss, optimizer, 100)
-network.evaluate(X[16])
-network.get_params()
+optimizer = nerve.optimizers.GradientDescentOptimizer(0.001)
+network.prepare(loss, optimizer, 1000)
+print(network(X[0,4].reshape(1,1)), y[:, 4])
+print(network(X[0,16].reshape(1,1)), y[:, 16])
+# network.get_params()
 network.epoch(X, y)
 network.train(X, y)
+# network.get_params()
+print(network(X[0,4].reshape(1,1)), y[:, 4])
+print(network(X[0,16].reshape(1,1)), y[:, 16])
 # '''

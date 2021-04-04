@@ -96,15 +96,18 @@ class Dense(Base):
         return f"{self.name}({self.shape})"
 
     def __init_delta(self):
-        self.__sample_count = 0
+        # TODO: THis batch count will not be necessary if weights updated
+        # per batch, unless the user wants to right own callback for control.
+        # if that is never going to be the case then remove this.
+        self.__batch_count = 0
         self.__delta = np.zeros(self.params.weights.shape)
 
     def __update_delta(self, _delta):
-        self.__sample_count += 1
+        self.__batch_count += 1
         self.__delta += _delta
 
     def delta(self):
-        return self.__delta / self.__sample_count
+        return self.__delta / self.__batch_count
 
     def _init_method(self, initialization):
         # TODO: Add decorators for passing other params to rand or zeros.
@@ -128,8 +131,7 @@ class Dense(Base):
 
     def evaluate(self, inp):
         if self.bias:
-            # inp = np.append(inp, np.ones((1, inp.shape[-1])), axis=0)  # TODO: Correct this append for entire batch compute
-            inp = np.append(inp, np.ones(1))  # Adds a '1' input backward disconnected neuron. This brings in the bias naturally
+            inp = np.append(inp, np.ones((1, inp.shape[-1])), axis=0)  # NOTE: Adds '1' for bias
         self._input = inp  # MEM: Immidiate computation is persisted in memory
         self._value = self.params.weights @ inp  # MEM
         # print('Input:', self._input)
@@ -137,11 +139,12 @@ class Dense(Base):
         return self.activation(self._value)
 
     def backpropogate(self, error):
-        # print('Error:', error)
-        feedback = np.diag(error) @ self.activation.delta(self._value)  # MEM
-        # print('Fdbck:', feedback)
-        self._delta = np.outer(feedback, self._input.T)  # feedback @ self._input.T # TODO: Replace for bacth compute
-        # print('Delta:', self._delta)
+        # print('Error:', error.shape)
+        # feedback = np.diag(error) @ self.activation.delta(self._value)  # NOTE: Observation! Diag was just equal to element wise multiplication
+        feedback = error * self.activation.delta(self._value)  # MEM
+        # print('Fdbck:', feedback.shape)
+        self._delta = feedback @ self._input.T
+        # print('Delta:', self._delta.shape)
         self.__update_delta(self._delta)  # MEM-MEM - # TODO: if frozen I can avoid having this variable
         if self.bias:
             next_error = self.params.weights.T[:-1] @ feedback  # NOTE: Drops the biases from weights
