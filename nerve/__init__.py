@@ -4,5 +4,6 @@ from nerve import (
     layers,
     loss,
     optimizers,
-    data
+    data,
+    utils
 )
